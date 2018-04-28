@@ -1,8 +1,3 @@
-/*
- * Author: Floris Creyf
- * Date: May 2015
- */
-
 #include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,7 +19,7 @@ void embed_LSB(int* sample, unsigned char *secret_bits, int* secret_cursor, bool
         sam -= 15;
         linbitcase = true;
     }
-    if (get_bits_inc(secret_bits, secret_cursor, 1)) //ak je bit na zapisanie rovny jednej
+    if (get_bits_inc(secret_bits, secret_cursor, 1)) // if bit to write is equal 1
         sam |= 1;
     else
         sam &= 0xFFFFFFFE;

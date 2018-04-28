@@ -5,7 +5,7 @@
 #include <fstream>
 #include <stdio.h>
 #include <stdlib.h>
-#include <alsa/asoundlib.h> /* dnf install alsa-lib-devel */
+#include <alsa/asoundlib.h>
 #include <vector>
 #include "id3.h"
 #include "mp3.h"
@@ -16,75 +16,31 @@
 #include <iomanip>
 using namespace std;
 
-#define ALSA_PCM_NEW_HW_PARAMS_API
-
-/**
- * Start decoding the MP3 and let ALSA hand the PCM stream over to a driver.
- * @param mp3_decode
- * @param buffer A buffer containing the MP3 bit stream.
- * @param offset An offset to a MP3 frame header.
- */
-inline void stream(mp3 &decoder, unsigned char *buffer, unsigned offset)
-{
-	unsigned sampeling_rate = decoder.get_sampling_rate();
-	unsigned channels = decoder.get_channel_mode() == 3 ? 1 : 2;
-	snd_pcm_t *handle;
-	snd_pcm_hw_params_t *hw = NULL;
-	snd_pcm_uframes_t frames = 128;
-
-	if (snd_pcm_open(&handle, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0)
-		exit(1);
-
-	snd_pcm_hw_params_alloca(&hw);
-	snd_pcm_hw_params_any(handle, hw);
-
-	if (snd_pcm_hw_params_set_access(handle, hw, SND_PCM_ACCESS_RW_INTERLEAVED) < 0)
-		exit(1);
-	if (snd_pcm_hw_params_set_format(handle, hw, SND_PCM_FORMAT_FLOAT_LE) < 0)
-		exit(1);
-	if (snd_pcm_hw_params_set_channels(handle, hw, channels) < 0)
-		exit(1);
-	if (snd_pcm_hw_params_set_rate_near(handle, hw, &sampeling_rate, NULL) < 0)
-		exit(1);
-	if (snd_pcm_hw_params_set_period_size_near(handle, hw, &frames, NULL) < 0)
-		exit(1);
-	if (snd_pcm_hw_params(handle, hw) < 0)
-		exit(1);
-	if (snd_pcm_hw_params_get_period_size(hw, &frames, NULL) < 0)
-		exit(1);
-	if (snd_pcm_hw_params_get_period_time(hw, &sampeling_rate, NULL) < 0)
-		exit(1);
-
-    int frame_count = 0;
-    unsigned char *dummy;
-	/* Start decoding. */
-	while (decoder.is_valid()) {
-		decoder.init_header_params(&buffer[offset], dummy);
-		if (decoder.is_valid()) {
-
-			decoder.init_frame_params(&buffer[offset], dummy, frame_count++, dummy, 0, 0);
-			offset += decoder.get_frame_size();
-		}
-
-		int e = snd_pcm_writei(handle, decoder.get_samples(), 1152);
-		if (e == -EPIPE)
-			snd_pcm_recover(handle, e, 0);
-	}
-
-	snd_pcm_drain(handle);
-	snd_pcm_close(handle);
-}
-
 inline void write_secret_data(mp3 &deco_enco, unsigned char *buffer, unsigned offset, unsigned char **new_buffer, unsigned char *secret_bits, int* secret_cursor, int pf, unsigned* buffer_length, unsigned secret_buffer_size) {
-//	int *dct1;
+/* inline void write_secret_data(mp3 &deco_enco, unsigned char *buffer, unsigned offset, unsigned char **new_buffer, unsigned char *secret_bits, int* secret_cursor, int pf, unsigned* buffer_length, unsigned secret_buffer_size) {
+ * Parameters:
+ * mp3 &deco_enco				pointer to mp3 object
+ * unsigned char *buffer 		pointer to original mp3 bitstream
+ * unsigned offset 				length of id3 tag (bytes)
+ * unsigned char **new_buffer 	pointer to space for the new mp3 bitstream with secret data
+ * unsigned char *secret_bits 	pointer to loaded file to be written
+ * int* secret_cursor 			pointer to variable where actual progress of embedding is being saved
+ * int pf 						maximal number of frames to process
+ * unsigned *buffer_length		length of the original mp3 bitstream (bytes)
+ * unsigned secret_buffer_size 	length of secret data to be inserted (bytes)
+*/
+
 	int frame_count = 0;
 	unsigned write_offset = offset;
+
+	deco_enco.bitsInsertedNormally = 0;
+	deco_enco.bitsInsertedToLinbits = 0;
 
     while (deco_enco.is_valid() && (frame_count < pf)) { // new run === new frame
 		deco_enco.init_header_params(&buffer[offset], *new_buffer + write_offset);
 		int constant = deco_enco.mono ? 21 : 36;
 		if (deco_enco.is_valid()) {
-			deco_enco.init_frame_params(&buffer[offset], *new_buffer + write_offset, frame_count, secret_bits, secret_cursor, secret_buffer_size, false);
+			deco_enco.init_frame_params(&buffer[offset], *new_buffer + write_offset, frame_count, secret_bits, secret_cursor, secret_buffer_size);
 
 			offset += deco_enco.get_frame_size();
 			write_offset += deco_enco.get_write_frame_size();
@@ -97,17 +53,14 @@ inline void write_secret_data(mp3 &deco_enco, unsigned char *buffer, unsigned of
                     puts ("Error (re)allocating memory");
                     exit (1);
                 }
-//                else
-//                    printf("\nSuccessfull reallocation!");
 			}
 
-//			deco_enco.interleave_dct();
-//			dct1 = deco_enco.get_samples_dct();
-//          memcpy(&dct[frame_count*2304], dct1, 2304 * sizeof(int));
 			frame_count++;
 
 		}
 	}
+
+	printf("\nNormally inserted bytes: %.1f\nBytes inserted to linbits: %.1f\n", 1.0*deco_enco.bitsInsertedNormally/8, 1.0*deco_enco.bitsInsertedToLinbits/8);
 	//crop new_buffer to desired size
 	*buffer_length = write_offset;
 	*new_buffer = (unsigned char*) realloc(*new_buffer, *buffer_length);
@@ -116,23 +69,22 @@ inline void write_secret_data(mp3 &deco_enco, unsigned char *buffer, unsigned of
          puts ("Error (re)allocating memory");
          exit (1);
     }
-//    else
-//        printf("\nSuccessfull reallocation!");
 
     printf("\nAverage bitrate of file: %d kbps", (unsigned) (*buffer_length * 8 / (1024 *frame_count * 0.026)));
-
-//	printf("\nwritten samples:\n");
-//    for (int i = 0; i < pf*2304; i++) {
-//        printf("%i ", dct[i]);
-//    }
 }
 
-//inline void read_secret_data(mp3 &decoder, unsigned char *buffer, unsigned offset, int* written_dct, int pf, unsigned char* read_secret_bits, int* read_secret_cursor)
-inline void read_secret_data(mp3 &decoder, unsigned char *buffer, unsigned offset, int pf, unsigned char** read_secret_bits, int* read_secret_cursor, unsigned* read_secret_buffer_size)
-{
+inline void read_secret_data(mp3 &decoder, unsigned char *buffer, unsigned offset, int pf, unsigned char** read_secret_bits, int* read_secret_cursor, unsigned* read_secret_buffer_size) {
+/* inline void read_secret_data(mp3 &decoder, unsigned char *buffer, unsigned offset, int pf, unsigned char** read_secret_bits, int* read_secret_cursor, unsigned* read_secret_buffer_size)
+ * PARAMETERS:
+ * mp3 &decoder 			pointer to mp3 object
+ * unsigned char *buffer 	pointer to stego mp3 bitstream
+ * unsigned offset 			length of id3 tag
+ * int pf 					maximum number of frames to process
+ * unsigned char **read_secret_bits pointer to memory where read data should be saved
+ * int* read_secret_cursor 	pointer to memory where the actual data recovery index is saved
+ * unsigned *read_secret_buffer_size pointer to memory where the size of the read buffer is saved
+*/
 	int frame_count = 0;
-//	int dct[pf*2304];
-//	int *dct1;
     unsigned char *dummy;
 	/* Start decoding. */
 	while (decoder.is_valid() && (frame_count < pf)) {
@@ -150,14 +102,7 @@ inline void read_secret_data(mp3 &decoder, unsigned char *buffer, unsigned offse
                     puts ("Error (re)allocating memory");
                     exit (1);
                 }
-//                else
-//                    printf("\nSuccessfull reallocation!");
-
 			}
-
-//			decoder.interleave_dct();
-//			dct1 = decoder.get_samples_dct();
-//			memcpy(&dct[frame_count*2304], dct1, 2304 * sizeof(int));
 			frame_count++;
 		}
 	}
@@ -171,20 +116,6 @@ inline void read_secret_data(mp3 &decoder, unsigned char *buffer, unsigned offse
          puts ("Error (re)allocating memory");
          exit (1);
     }
-//    else
-//        printf("\nSuccessfull reallocation!");
-
-//	printf("\nincorrectly decoded samples:\n");
-//    for (int i = 0; i < pf*2304; i++) {
-//        if (dct[i] != written_dct[i]) {
-//            int f = i / 2304;
-//            int g = (i % 2304) / 1152;
-//            int s = ((i % 2304) % 1152) / 2;
-//            int c = ((i % 2304) % 1152) % 2;
-//            printf("\ni = %i, frame %d gr%d ch%d sam %d: dct[i] = %i, written_dct[i] = %i", i, f, g, c, s, dct[i], written_dct[i]);
-//        }
-//
-//    }
 
 }
 
@@ -242,23 +173,6 @@ void set_retrieved_file(char *dir, unsigned char *buffer, unsigned buffer_length
     file.close();
 }
 
-std::vector<id3> get_id3_tags(unsigned char *buffer, unsigned &offset)
-{
-	std::vector<id3> tags;
-	int i = 0;
-	bool valid = true;
-
-	while (valid) {
-		id3 tag(&buffer[offset]);
-		if (valid = tag.is_valid()) {
-			tags.push_back(tag);
-			offset += tags[i++].get_id3_offset() + 10;
-		}
-	}
-
-	return tags;
-}
-
 unsigned get_id3_length(unsigned char *buffer) {
 
     unsigned offset = 0;
@@ -292,18 +206,14 @@ int main(int argc, char **argv)
 	try {
 	    unsigned buffer_length = 0;
 		unsigned char *buffer = get_file(argv[1], &buffer_length);
-//		unsigned char new_buffer[buffer_length]; //temporary definition. Need for dynamic allocation
-        unsigned char *new_buffer;
+		unsigned char *new_buffer;
         new_buffer = (unsigned char*) malloc (buffer_length);
         if (new_buffer == NULL) exit (1);
 
 
         int process_frames = 9000; //maximal number of frames to process
-//        int secret_buffer_size = 600000;
         unsigned secret_buffer_size;
         unsigned char *secret_bits = get_file(argv[2], &secret_buffer_size); //loading content to hide in mp3 file
-//		unsigned char secret_bits[secret_buffer_size];
-//        memset(secret_bits, 0xA6, secret_buffer_size);
 		int secret_cursor = 0;
 
 		unsigned offset = get_id3_length(buffer);
@@ -311,31 +221,20 @@ int main(int argc, char **argv)
         if (offset > 0)
             memcpy(new_buffer, buffer, offset); //copy id3 tags to new_buffer without parsing
 
-//		std::vector<id3> tags = get_id3_tags(buffer, offset); //questionable. New offset is not returned. Files with ID3 tags are not decoded.
-		// printf("%d\n", offset);
-
 		mp3 deco_enco(&buffer[offset], &new_buffer[offset]);
-//		 stream(decoder, buffer, offset);
-//        int *written_dct;
-//		written_dct = new int[2304*process_frames];
-//		write_secret_data(deco_enco, buffer, offset, new_buffer, secret_bits, &secret_cursor, written_dct, process_frames, buffer_length);
-        write_secret_data(deco_enco, buffer, offset, &new_buffer, secret_bits, &secret_cursor, process_frames, &buffer_length, secret_buffer_size);
+		write_secret_data(deco_enco, buffer, offset, &new_buffer, secret_bits, &secret_cursor, process_frames, &buffer_length, secret_buffer_size);
 
         set_stego_file(argv[1], new_buffer, buffer_length); //new_buffer could have changed its address when reallocationg in write secret data!! return of new pointer necessary!
         printf("\nSuccessfully written to file.\n%.3f kB of secret data embedded.\nFile size = %.2f kB", (float) secret_cursor/(8 * 1024), (float) buffer_length / 1024);
         printf("\nSecret data occupy %.2f %% of file size.", (float) 100 * secret_cursor / (8 * buffer_length));
 
-
-
         unsigned char *dummy;
         mp3 decoder(&new_buffer[offset], dummy, true);
-//        unsigned char read_secret_bits[secret_buffer_size];
         unsigned read_secret_buffer_size = buffer_length / 10; //after splitting the code into embedding and retrieval part, buffer_length will be directly given
         unsigned char *read_secret_bits;
         read_secret_bits = (unsigned char*) malloc (read_secret_buffer_size);
         if (new_buffer == NULL) exit (1);
         int read_secret_cursor = 0;
-//        read_secret_data(decoder, new_buffer, offset, written_dct, process_frames, read_secret_bits, &read_secret_cursor);
         read_secret_data(decoder, new_buffer, offset, process_frames, &read_secret_bits, &read_secret_cursor, &read_secret_buffer_size);
 
         set_retrieved_file(argv[2], read_secret_bits, read_secret_buffer_size);

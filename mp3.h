@@ -1,11 +1,6 @@
-/*
- * Author: Floris Creyf
- * Date: May 2015
- * Unpacks and decodes frames/headers.
- */
 
 #include <math.h>
-#include <stdlib.h> //na skusku kvoli erroru
+#include <stdlib.h>
 #include "tables.h"
 
 #ifndef MP3_H
@@ -20,7 +15,7 @@ public:
 	mp3(unsigned char *buffer, unsigned char *new_buffer, bool decodeOnly=false);
  	void init_header_params(unsigned char *buffer, unsigned char *new_buffer);
  	void init_header_params_extract_data(unsigned char *buffer, unsigned char *new_buffer);
-	void init_frame_params(unsigned char *buffer, unsigned char *new_buffer, int frame_count, unsigned char *secret_bits, int* secret_cursor, unsigned secret_buffer_size, bool requant=true);
+	void init_frame_params(unsigned char *buffer, unsigned char *new_buffer, int frame_count, unsigned char *secret_bits, int* secret_cursor, unsigned secret_buffer_size);
 	void init_frame_params_extract_data(unsigned char *buffer, int frame_count, unsigned char* read_secret_bits, int* read_secret_cursor);
 
 private:
@@ -33,6 +28,8 @@ public:
 	int threshold1 = 150;
 	int threshold2 = 50;
 	int threshold3 = 500;
+	int bitsInsertedNormally;
+	int bitsInsertedToLinbits;
 
 private: /* Header */
 	float mpeg_version;
@@ -150,13 +147,6 @@ private: /* Frame */
 	void unpack_samples(unsigned char *bit_stream, int gr, int ch, int bit, int max_bit);
 	void retrieve_secret_bits(unsigned char *main_data, int gr, int ch, int bit, int max_bit, unsigned char* read_secret_bits, int* read_secret_cursor);
 	void pack_samples(unsigned char *new_main_data, int gr, int ch, int* bit_cursor, unsigned char *secret_bits, int* secret_cursor, unsigned secret_buffer_size);
-	void requantize(int gr, int ch);
-	void ms_stereo(int gr);
-	void reorder(int gr, int ch);
-	void alias_reduction(int gr, int ch);
-	void imdct(int gr, int ch);
-	void frequency_inversion(int gr, int ch);
-	void synth_filterbank(int gr, int ch);
 	void interleave();
 
 

@@ -1,8 +1,3 @@
-/*
- * Author: Floris Creyf
- * Date: May 2015
- */
-
 #ifndef UTIL_H
 #define	UTIL_H
 
